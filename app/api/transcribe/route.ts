@@ -25,7 +25,9 @@ export async function POST(req: NextRequest) {
       sarvamBody.append("file", audio, "speech.webm");
       sarvamBody.append("model", process.env.SARVAM_STT_MODEL || "saaras:v3");
       sarvamBody.append("mode", "transcribe");
-      sarvamBody.append("language_code", mapToSarvamLanguage(language));
+      if (language !== "auto") {
+        sarvamBody.append("language_code", mapToSarvamLanguage(language));
+      }
 
       console.log("Calling Sarvam API...");
       const sarvamRes = await fetch("https://api.sarvam.ai/speech-to-text", {
