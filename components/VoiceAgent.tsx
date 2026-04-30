@@ -455,7 +455,7 @@ export function VoiceAgent() {
         console.error("Transcription error:", errText);
         setError(
           errText.includes("No STT provider configured")
-            ? "No STT provider configured. Add OPENAI_API_KEY or SARVAM_API_KEY in Vercel."
+            ? "No STT provider configured. Add SARVAM_API_KEY in Vercel."
             : "Transcription failed. Check the API response in the browser console.",
         );
         return;
