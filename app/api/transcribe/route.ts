@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 
-export const runtime = "edge";
+export const runtime = "nodejs";
 
 function mapToSarvamLanguage(language: string) {
   if (!language || language === "auto") return "unknown";
