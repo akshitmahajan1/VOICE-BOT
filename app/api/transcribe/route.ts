@@ -18,53 +18,67 @@ export async function POST(req: NextRequest) {
     }
 
     const sarvamKey = process.env.SARVAM_API_KEY;
-    console.log("SARVAM_API_KEY defined:", !!sarvamKey, "Key starts with:", sarvamKey?.substring(0, 5));
-    
-    if (sarvamKey) {
-      const sarvamBody = new FormData();
-      sarvamBody.append("file", audio, "speech.webm");
-      sarvamBody.append("model", process.env.SARVAM_STT_MODEL || "saaras:v3");
-      sarvamBody.append("mode", "transcribe");
-      if (language !== "auto") {
-        sarvamBody.append("language_code", mapToSarvamLanguage(language));
-      }
+    console.log("SARVAM_API_KEY defined:", !!sarvamKey);
 
-      console.log("Calling Sarvam API...");
-      const sarvamRes = await fetch("https://api.sarvam.ai/speech-to-text", {
-        method: "POST",
-        headers: {
-          "api-subscription-key": sarvamKey,
+    if (!sarvamKey) {
+      return NextResponse.json(
+        {
+          error: "No STT provider configured",
+          details: "Set SARVAM_API_KEY in .env.local for local development or in Vercel for deployment.",
         },
-        body: sarvamBody,
-      });
-
-      console.log("Sarvam response status:", sarvamRes.status, sarvamRes.ok);
-      
-      if (sarvamRes.ok) {
-        const sarvamJson = (await sarvamRes.json()) as {
-          transcript?: string;
-          language_code?: string;
-          language_probability?: number;
-        };
-
-        return NextResponse.json({
-          text: sarvamJson.transcript ?? "",
-          language: sarvamJson.language_code ?? language,
-          confidence: sarvamJson.language_probability ?? 0.9,
-          provider: "sarvam",
-        });
-      } else {
-        const errText = await sarvamRes.text();
-        console.log("Sarvam error:", sarvamRes.status, errText?.substring(0, 200));
-      }
+        { status: 503 },
+      );
     }
+
+    // Log audio info for debugging
+    console.log("Audio type:", (audio as Blob).type, "Size:", (audio as Blob).size, "bytes");
+
+    const sarvamBody = new FormData();
+    sarvamBody.append("file", audio, "speech.webm");
+    sarvamBody.append("model", process.env.SARVAM_STT_MODEL || "saaras:v3");
+    sarvamBody.append("mode", "transcribe");
+    if (language !== "auto") {
+      sarvamBody.append("language_code", mapToSarvamLanguage(language));
+    }
+
+    console.log("Calling Sarvam API...");
+    const sarvamRes = await fetch("https://api.sarvam.ai/speech-to-text", {
+      method: "POST",
+      headers: {
+        "api-subscription-key": sarvamKey,
+      },
+      body: sarvamBody,
+    });
+
+    console.log("Sarvam response status:", sarvamRes.status, sarvamRes.ok);
+
+    if (sarvamRes.ok) {
+      const sarvamJson = (await sarvamRes.json()) as {
+        transcript?: string;
+        language_code?: string;
+        language_probability?: number;
+      };
+
+      return NextResponse.json({
+        text: sarvamJson.transcript ?? "",
+        language: sarvamJson.language_code ?? language,
+        confidence: sarvamJson.language_probability ?? 0.9,
+        provider: "sarvam",
+      });
+    }
+
+    const errText = await sarvamRes.text();
+    console.log("Sarvam error:", sarvamRes.status, errText?.substring(0, 500));
+    console.log("Sarvam response headers:", Object.fromEntries(sarvamRes.headers.entries()));
 
     return NextResponse.json(
       {
-        error: "No STT provider configured",
-        details: "Set SARVAM_API_KEY in Vercel",
+        error: "Sarvam transcription failed",
+        status: sarvamRes.status,
+        details: errText?.slice(0, 1000) || `Sarvam returned HTTP ${sarvamRes.status}`,
+        headers: Object.fromEntries(sarvamRes.headers.entries()),
       },
-      { status: 500 },
+      { status: 502 },
     );
   } catch (error) {
     return NextResponse.json(

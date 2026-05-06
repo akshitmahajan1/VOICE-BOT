@@ -61,6 +61,34 @@ const defaultSettings: AgentSettings = {
   enableLogging: true,
 };
 
+function sanitizeForTTS(text: string) {
+  if (!text) return text;
+  let t = text;
+  // Remove citation blocks like [cite: ...] and similar bracketed footnotes
+  t = t.replace(/\[cite:[^\]]*\]/gi, "");
+  t = t.replace(/\[\s*cite\s*:\s*[^\]]*\]/gi, "");
+  // Remove any remaining bracketed references [text]
+  t = t.replace(/\[[^\]]*\]/g, "");
+  // Turn list markers and leading asterisks into sentence breaks
+  t = t.replace(/(^|\n)\s*[-\*]\s+/g, ". ");
+  // Remove leftover standalone words like 'cite' or 'cite:'
+  t = t.replace(/\bcite\b:?/gi, "");
+  // Remove common markdown punctuation characters that shouldn't be spoken
+  t = t.replace(/[`_~>#\{\}]/g, "");
+  // Convert written punctuation words to actual punctuation
+  t = t.replace(/\bcomma\b/gi, ",");
+  t = t.replace(/\bdot\b/gi, ".");
+  t = t.replace(/\bperiod\b/gi, ".");
+  t = t.replace(/\bsemicolon\b/gi, ";");
+  // Remove the word 'asterisk' and similar artifacts
+  t = t.replace(/\basterisk\b/gi, "");
+  // Collapse repeated punctuation and whitespace
+  t = t.replace(/\s+/g, " ");
+  t = t.replace(/\.{2,}/g, ".");
+  t = t.replace(/,{2,}/g, ",");
+  return t.trim();
+}
+
 type NoiseGateProps = {
   level: number;
   threshold: number;
@@ -138,6 +166,56 @@ function getRmsLevel(analyser: AnalyserNode): number {
     sum += v * v;
   }
   return Math.sqrt(sum / buffer.length);
+}
+
+function encodePcm16ToWav(audioBuffer: AudioBuffer) {
+  const numberOfChannels = 1;
+  const sampleRate = audioBuffer.sampleRate;
+  const channelData = audioBuffer.getChannelData(0);
+  const dataLength = channelData.length * 2;
+  const buffer = new ArrayBuffer(44 + dataLength);
+  const view = new DataView(buffer);
+
+  const writeString = (offset: number, value: string) => {
+    for (let index = 0; index < value.length; index += 1) {
+      view.setUint8(offset + index, value.charCodeAt(index));
+    }
+  };
+
+  writeString(0, "RIFF");
+  view.setUint32(4, 36 + dataLength, true);
+  writeString(8, "WAVE");
+  writeString(12, "fmt ");
+  view.setUint32(16, 16, true);
+  view.setUint16(20, 1, true);
+  view.setUint16(22, numberOfChannels, true);
+  view.setUint32(24, sampleRate, true);
+  view.setUint32(28, sampleRate * numberOfChannels * 2, true);
+  view.setUint16(32, numberOfChannels * 2, true);
+  view.setUint16(34, 16, true);
+  writeString(36, "data");
+  view.setUint32(40, dataLength, true);
+
+  let offset = 44;
+  for (let index = 0; index < channelData.length; index += 1) {
+    const sample = Math.max(-1, Math.min(1, channelData[index]));
+    view.setInt16(offset, sample < 0 ? sample * 0x8000 : sample * 0x7fff, true);
+    offset += 2;
+  }
+
+  return new Blob([buffer], { type: "audio/wav" });
+}
+
+async function convertBlobToWav(blob: Blob) {
+  const arrayBuffer = await blob.arrayBuffer();
+  const audioContext = new AudioContext();
+
+  try {
+    const audioBuffer = await audioContext.decodeAudioData(arrayBuffer.slice(0));
+    return encodePcm16ToWav(audioBuffer);
+  } finally {
+    await audioContext.close().catch(() => undefined);
+  }
 }
 
 function NoiseGate({ level, threshold }: NoiseGateProps) {
@@ -218,8 +296,20 @@ function SettingsPanel({ settings, onChange }: SettingsPanelProps) {
 }
 
 function TranscriptionDisplay({ items, liveText }: TranscriptionDisplayProps) {
+  const containerRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    try {
+      el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
+    } catch {
+      el.scrollTop = el.scrollHeight;
+    }
+  }, [items, liveText]);
+
   return (
-    <div className="h-[400px] overflow-y-auto rounded-xl border border-slate-700 bg-slate-950/70 p-4">
+    <div ref={containerRef} className="h-[400px] overflow-y-auto rounded-xl border border-slate-700 bg-slate-950/70 p-4">
       <h2 className="mb-4 text-sm font-semibold uppercase tracking-wide text-slate-400">
         Live Transcript
       </h2>
@@ -357,7 +447,8 @@ export function VoiceAgent() {
       createdAt: new Date().toISOString(),
     };
     setItems((prev) => [...prev, assistantEntry]);
-    await speak(chatJson.response, chatJson.language);
+    const ttsText = sanitizeForTTS(chatJson.response);
+    await speak(ttsText, chatJson.language);
   }
 
   async function finalizeSpeechTranscript(transcript: string, language: string) {
@@ -406,7 +497,7 @@ export function VoiceAgent() {
         clearSpeechPauseTimer();
         speechPauseTimerRef.current = window.setTimeout(() => {
           void finalizeSpeechTranscript(finalTranscript, recognition.lang);
-        }, 1100);
+        }, 1800);
       }
     };
 
@@ -440,8 +531,9 @@ export function VoiceAgent() {
     processingRef.current = true;
 
     try {
+      const wavBlob = blob.type === "audio/wav" ? blob : await convertBlobToWav(blob);
       const body = new FormData();
-      body.append("audio", blob, "chunk.webm");
+      body.append("audio", wavBlob, "chunk.wav");
       body.append("language", settings.language);
       body.append("sessionId", sessionId);
 
@@ -455,8 +547,10 @@ export function VoiceAgent() {
         console.error("Transcription error:", errText);
         setError(
           errText.includes("No STT provider configured")
-            ? "No STT provider configured. Add SARVAM_API_KEY in Vercel."
-            : "Transcription failed. Check the API response in the browser console.",
+            ? "No STT provider configured. Add SARVAM_API_KEY in .env.local for local development or in Vercel for deployment."
+            : errText.includes("Sarvam transcription failed")
+              ? "Sarvam STT failed. Check SARVAM_API_KEY and the server response in the browser console."
+              : "Transcription failed. Check the API response in the browser console.",
         );
         return;
       }
@@ -542,10 +636,6 @@ export function VoiceAgent() {
         }
       }, 120);
       setIsListening(true);
-
-      if (supportsBrowserSpeechRecognition()) {
-        startBrowserSpeechFallback();
-      }
     } catch {
       setError("Microphone access failed. Check browser permissions.");
     }
@@ -627,9 +717,6 @@ export function VoiceAgent() {
       if (isListening) {
         pendingSpeechTranscriptRef.current = "";
         setLiveTranscript("");
-        if (supportsBrowserSpeechRecognition()) {
-          startBrowserSpeechFallback();
-        }
       }
     }
   }
