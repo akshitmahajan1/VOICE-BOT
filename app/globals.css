@@ -4,12 +4,12 @@
 
 :root {
   color-scheme: dark light;
-  --bg-1: #020617;
-  --bg-2: #0f172a;
-  --bg-3: #111827;
-  --text: #e5e7eb;
-  --muted: #94a3b8;
-  --accent: #0ea5e9;
+  --bg-1: #0f0c29;
+  --bg-2: #302b63;
+  --bg-3: #24243e;
+  --text: #ffffff;
+  --muted: #cbd5e1;
+  --accent: #38bdf8;
 }
 
 * {
@@ -24,12 +24,13 @@ body {
 }
 
 body {
-  font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Helvetica, Arial,
-    Apple Color Emoji, Segoe UI Emoji;
-  background:
-    radial-gradient(circle at 20% 20%, rgba(14, 165, 233, 0.18), transparent 30%),
-    radial-gradient(circle at 80% 10%, rgba(34, 197, 94, 0.16), transparent 25%),
-    linear-gradient(180deg, var(--bg-1), var(--bg-2) 55%, var(--bg-3));
+  font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  background-color: #0f172a;
+  background-image: 
+    radial-gradient(at 0% 0%, hsla(253,16%,7%,1) 0, transparent 50%), 
+    radial-gradient(at 50% 0%, hsla(225,39%,30%,1) 0, transparent 50%), 
+    radial-gradient(at 100% 0%, hsla(339,49%,30%,1) 0, transparent 50%);
+  background-attachment: fixed;
   color: var(--text);
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
@@ -42,18 +43,38 @@ body.light {
   --bg-3: #dbeafe;
   --text: #0f172a;
   --muted: #475569;
-  background:
-    radial-gradient(circle at 20% 20%, rgba(14, 165, 233, 0.14), transparent 30%),
-    radial-gradient(circle at 80% 10%, rgba(34, 197, 94, 0.12), transparent 25%),
-    linear-gradient(180deg, var(--bg-1), var(--bg-2) 55%, var(--bg-3));
+  background-color: #e2e8f0;
+  background-image: 
+    radial-gradient(at 0% 0%, hsla(253,16%,90%,1) 0, transparent 50%), 
+    radial-gradient(at 50% 0%, hsla(225,39%,80%,1) 0, transparent 50%), 
+    radial-gradient(at 100% 0%, hsla(339,49%,80%,1) 0, transparent 50%);
   color: var(--text);
 }
 
 a {
   color: var(--accent);
   text-decoration: none;
+  transition: all 0.2s ease;
 }
 
 a:hover {
   text-decoration: underline;
+  text-shadow: 0 0 8px rgba(56, 189, 248, 0.5);
+}
+
+/* Custom Scrollbar for Glassmorphism */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-track {
+  background: rgba(255, 255, 255, 0.02);
+  border-radius: 8px;
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.15);
+  border-radius: 8px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.25);
 }

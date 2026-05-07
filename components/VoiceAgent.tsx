@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import { OrbVisualizer } from "./OrbVisualizer";
 
 type AudioGraph = {
   ctx: AudioContext;
@@ -222,7 +223,7 @@ function NoiseGate({ level, threshold }: NoiseGateProps) {
   const active = level > threshold;
 
   return (
-    <div className="rounded-xl border border-slate-700 bg-slate-900/60 p-4">
+    <div className="rounded-xl border border-white/10 bg-white/5 p-4 backdrop-blur-xl shadow-[0_8px_32px_0_rgba(0,0,0,0.15)]">
       <div className="mb-2 flex items-center justify-between text-sm">
         <span>Noise Gate</span>
         <span className={active ? "text-emerald-400" : "text-slate-400"}>
@@ -241,7 +242,7 @@ function NoiseGate({ level, threshold }: NoiseGateProps) {
 
 function SettingsPanel({ settings, onChange }: SettingsPanelProps) {
   return (
-    <section className="space-y-4 rounded-xl border border-slate-700 bg-slate-900/60 p-4">
+    <section className="space-y-4 rounded-xl border border-white/10 bg-white/5 p-4 backdrop-blur-xl shadow-[0_8px_32px_0_rgba(0,0,0,0.15)]">
       <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-300">
         Settings
       </h2>
@@ -251,7 +252,7 @@ function SettingsPanel({ settings, onChange }: SettingsPanelProps) {
         <input
           value={settings.language}
           onChange={(e) => onChange({ ...settings, language: e.target.value })}
-          className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2"
+          className="w-full rounded-lg border border-white/10 bg-white/5 px-3 py-2 backdrop-blur-md text-white placeholder-slate-400 focus:border-sky-500/50 focus:outline-none focus:ring-1 focus:ring-sky-500/50 transition-all"
           placeholder="auto"
         />
       </label>
@@ -261,7 +262,7 @@ function SettingsPanel({ settings, onChange }: SettingsPanelProps) {
         <input
           value={settings.voiceId}
           onChange={(e) => onChange({ ...settings, voiceId: e.target.value })}
-          className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2"
+          className="w-full rounded-lg border border-white/10 bg-white/5 px-3 py-2 backdrop-blur-md text-white placeholder-slate-400 focus:border-sky-500/50 focus:outline-none focus:ring-1 focus:ring-sky-500/50 transition-all"
           placeholder="ElevenLabs voice ID"
         />
       </label>
@@ -309,7 +310,7 @@ function TranscriptionDisplay({ items, liveText }: TranscriptionDisplayProps) {
   }, [items, liveText]);
 
   return (
-    <div ref={containerRef} className="h-[400px] overflow-y-auto rounded-xl border border-slate-700 bg-slate-950/70 p-4">
+    <div ref={containerRef} className="h-[400px] overflow-y-auto rounded-xl border border-white/10 bg-white/5 p-4 backdrop-blur-xl shadow-[0_8px_32px_0_rgba(0,0,0,0.15)] custom-scrollbar">
       <h2 className="mb-4 text-sm font-semibold uppercase tracking-wide text-slate-400">
         Live Transcript
       </h2>
@@ -325,7 +326,7 @@ function TranscriptionDisplay({ items, liveText }: TranscriptionDisplayProps) {
         {items.map((entry) => (
           <div
             key={entry.id}
-            className="rounded-lg border border-slate-800 bg-slate-900/70 p-3"
+            className="rounded-lg border border-white/10 bg-white/5 p-3 backdrop-blur-md"
           >
             <div className="mb-1 text-xs text-slate-400">
               {entry.role.toUpperCase()} • {entry.language} • conf {entry.confidence}
@@ -429,6 +430,7 @@ export function VoiceAgent() {
         sessionId,
         language,
         enableLogging: settings.enableLogging,
+        history: items.map(i => ({ role: i.role, content: i.text, language: i.language, timestamp: i.createdAt })),
       }),
     });
 
@@ -616,24 +618,16 @@ export function VoiceAgent() {
       startRecorderFallback(stream);
       intervalRef.current = window.setInterval(() => {
         if (!graphRef.current) return;
+
+        // STATE LOCK: When agent is speaking, ignore microphone completely
+        if (isSpeakingRef.current) {
+          setLevel(0);
+          return;
+        }
+
         const next = getRmsLevel(graphRef.current.analyser);
         levelRef.current = next;
         setLevel(next);
-
-        if (isSpeakingRef.current) {
-          const bargeInThreshold = Math.max(settings.noiseThreshold * 3, 0.12);
-          if (next >= bargeInThreshold) {
-            bargeInHitsRef.current += 1;
-            if (bargeInHitsRef.current >= 3) {
-              bargeInHitsRef.current = 0;
-              stopAssistantSpeech();
-            }
-          } else {
-            bargeInHitsRef.current = 0;
-          }
-        } else {
-          bargeInHitsRef.current = 0;
-        }
       }, 120);
       setIsListening(true);
     } catch {
@@ -644,15 +638,14 @@ export function VoiceAgent() {
   async function stopListening() {
     setIsListening(false);
     clearSpeechPauseTimer();
-    stopAssistantSpeech();
     pendingSpeechTranscriptRef.current = "";
     recorderFallbackStartedRef.current = false;
     if (intervalRef.current) {
       window.clearInterval(intervalRef.current);
       intervalRef.current = null;
     }
-    if (mediaRecorderRef.current?.state !== "inactive") {
-      mediaRecorderRef.current?.stop();
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state !== "inactive") {
+      mediaRecorderRef.current.stop();
     }
     recognitionRef.current?.stop();
     graphRef.current?.ctx.close();
@@ -661,6 +654,7 @@ export function VoiceAgent() {
     recognitionRef.current = null;
     graphRef.current = null;
     streamRef.current = null;
+    setLevel(0);
   }
 
   async function speak(text: string, language: string) {
@@ -668,48 +662,56 @@ export function VoiceAgent() {
     isSpeakingRef.current = true;
     clearSpeechPauseTimer();
     recognitionRef.current?.stop();
-    recognitionRef.current = null;
-    bargeInHitsRef.current = 0;
     try {
-      const res = await fetch("/api/tts", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          text,
-          language,
-          voiceId: settings.voiceId,
-        }),
-      });
+      const url = `/api/tts?text=${encodeURIComponent(text)}&language=${encodeURIComponent(language)}&voiceId=${encodeURIComponent(settings.voiceId)}`;
+      const audio = new Audio(url);
+      
+      await new Promise<void>((resolve) => {
+        activeAudioRef.current = audio;
+        activeAudioUrlRef.current = url;
+        assistantSpeechResolveRef.current = () => {
+          activeAudioRef.current = null;
+          resolve();
+        };
 
-      if (res.ok && res.headers.get("content-type")?.includes("audio")) {
-        const audioBlob = await res.blob();
-        const url = URL.createObjectURL(audioBlob);
-        const audio = new Audio(url);
-        await new Promise<void>((resolve) => {
-          activeAudioRef.current = audio;
-          activeAudioUrlRef.current = url;
-          assistantSpeechResolveRef.current = () => {
-            if (activeAudioUrlRef.current === url) {
-              URL.revokeObjectURL(url);
-              activeAudioUrlRef.current = null;
+        let fallbackPlayed = false;
+        const playFallback = () => {
+          if (fallbackPlayed) return;
+          fallbackPlayed = true;
+
+          const fallback = new SpeechSynthesisUtterance(text);
+          // Keep a reference to prevent Chrome garbage collection bug that cuts off speech mid-sentence
+          (window as any)._activeUtterances = (window as any)._activeUtterances || [];
+          (window as any)._activeUtterances.push(fallback);
+
+          fallback.lang = (language && language.length <= 5) ? language : "en-US";
+          let isResolved = false;
+          const safeResolve = () => {
+            if (!isResolved) {
+              isResolved = true;
+              // Clean up the reference to allow GC after completion
+              const utterances = (window as any)._activeUtterances;
+              if (utterances) {
+                const idx = utterances.indexOf(fallback);
+                if (idx > -1) utterances.splice(idx, 1);
+              }
+              resolveAssistantSpeech();
             }
-            activeAudioRef.current = null;
-            resolve();
           };
-          audio.onended = () => resolveAssistantSpeech();
-          audio.onerror = () => resolveAssistantSpeech();
-          void audio.play().catch(() => resolveAssistantSpeech());
-        });
-      } else {
-        const fallback = new SpeechSynthesisUtterance(text);
-        fallback.lang = language === "auto" ? "en-US" : language;
-        await new Promise<void>((resolve) => {
-          assistantSpeechResolveRef.current = resolve;
-          fallback.onend = () => resolve();
-          fallback.onerror = () => resolve();
+          fallback.onend = safeResolve;
+          fallback.onerror = safeResolve;
           speechSynthesis.speak(fallback);
-        });
-      }
+          
+          // Safety timeout in case onend never fires (give it plenty of time so it doesn't cut off)
+          const words = text.split(/\s+/).length;
+          const timeoutMs = Math.max(10000, (words / 1.5) * 1000 + 5000);
+          setTimeout(safeResolve, timeoutMs);
+        };
+
+        audio.onended = () => resolveAssistantSpeech();
+        audio.onerror = () => playFallback();
+        audio.play().catch(() => playFallback());
+      });
     } finally {
       resolveAssistantSpeech();
       isSpeakingRef.current = false;
@@ -717,13 +719,24 @@ export function VoiceAgent() {
       if (isListening) {
         pendingSpeechTranscriptRef.current = "";
         setLiveTranscript("");
+        try {
+          if (recognitionRef.current) {
+            recognitionRef.current.start();
+          }
+        } catch {
+          // Ignore if already started
+        }
+        if (mediaRecorderRef.current && mediaRecorderRef.current.state === "recording") {
+          mediaRecorderRef.current.stop();
+          mediaRecorderRef.current.start(5000);
+        }
       }
     }
   }
 
   return (
     <div className="grid gap-6 md:grid-cols-[1fr_360px]">
-      <section className="rounded-2xl border border-slate-700 bg-slate-900/60 p-5 backdrop-blur">
+      <section className="rounded-2xl border border-white/10 bg-white/5 p-6 backdrop-blur-2xl shadow-[0_8px_32px_0_rgba(0,0,0,0.2)]">
         <header className="mb-5 flex flex-wrap items-center justify-between gap-3">
           <div>
             <h1 className="text-2xl font-semibold">Live Voice Agent</h1>
@@ -744,13 +757,19 @@ export function VoiceAgent() {
 
         <div className="mb-4 grid gap-4 md:grid-cols-2">
           <NoiseGate level={level} threshold={settings.noiseThreshold} />
-          <div className="rounded-xl border border-slate-700 bg-slate-900/60 p-4">
+          <div className="rounded-xl border border-white/10 bg-white/5 p-4 backdrop-blur-xl shadow-[0_8px_32px_0_rgba(0,0,0,0.15)]">
             <div className="text-sm text-slate-400">Agent state</div>
             <div className="mt-2 text-lg font-medium">
-              {isSpeaking ? "Speaking" : isListening ? "Listening" : "Idle"}
+              {isSpeaking ? "Speaking" : (isListening && level > settings.noiseThreshold) ? "Listening" : "Idle"}
             </div>
           </div>
         </div>
+
+        {isListening && streamRef.current ? (
+          <div className="mb-6 flex justify-center">
+            <OrbVisualizer stream={streamRef.current} isSpeaking={isSpeaking} />
+          </div>
+        ) : null}
 
         {error ? (
           <p className="mb-3 rounded-lg border border-rose-500/40 bg-rose-900/30 p-3 text-sm text-rose-200">

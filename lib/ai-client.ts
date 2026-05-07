@@ -6,7 +6,7 @@ import { findMatchingAnswer } from "@/lib/knowledge-base";
 const DEFAULT_SYSTEM_PROMPT = `You are a helpful, friendly voice assistant.
 - Speak naturally like a human.
 - Keep responses concise (3-5 seconds speech).
-- Use the user's name when appropriate.
+- If the user explicitly tells you their name, use it when appropriate. Otherwise, do not assume or invent a name.
 - Remember key facts from the conversation.
 - Match the user's language and tone.
 - Pause naturally between sentences.
@@ -55,7 +55,7 @@ async function getGeminiAnswer(args: {
         ...(args.grounded ? { tools: [{ google_search: {} }] } : {}),
         generationConfig: {
           temperature: 0.7,
-          maxOutputTokens: 300,
+          maxOutputTokens: 800,
         },
       }),
     },
@@ -121,7 +121,7 @@ export async function generateAgentResponse(args: {
     model,
     system: DEFAULT_SYSTEM_PROMPT,
     prompt: `Language: ${args.language}\nConversation so far:\n${historyText}\n\nUser: ${args.userText}`,
-    maxOutputTokens: 300,
+    maxOutputTokens: 800,
   });
 
   return result.text;

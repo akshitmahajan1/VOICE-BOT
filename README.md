@@ -1,76 +1,92 @@
-# Voice Agent MVP
+# Multilingual Voice Agent
 
-Production-oriented multilingual real-time voice agent web app using Next.js 14, Vercel AI SDK, and Web Audio API processing.
+A production-ready, highly responsive multilingual real-time voice agent web application built with Next.js 14, Vercel AI SDK, and the Web Audio API. 
 
-## Features
+Recently updated with a premium, sleek **Glassmorphism** UI design and robust continuous-listening features.
 
-- Real-time voice capture with noise suppression
-- Sarvam STT with auto language detection
-- Gemini API for LLM responses with Google Search grounding
-- Web Audio API processing with noise gate
-- Session memory with optional Supabase persistence
-- Mobile-responsive UI with live transcript and waveform
-- PWA manifest + service worker
+## ✨ Key Features
 
-## Quick Start
+- **Premium Glassmorphism UI**: Beautiful, dynamic interface with frosted glass effects, smooth gradients, and micro-animations.
+- **Continuous Voice Capture**: Advanced Web Audio API integration with a custom noise gate and state-lock mechanism to prevent the agent from listening to its own voice.
+- **Flawless Context Memory**: Frontend-persisted conversation history with intelligent Edge API integration, ensuring perfect memory across sessions.
+- **Multilingual STT**: Sarvam AI (saaras:v3) for high-quality transcription, with live browser fallback via Web Speech API.
+- **Smart Text-To-Speech (TTS)**: Seamless integration with ElevenLabs and OpenAI TTS models with intelligent audio sanitization. If an API key is missing or invalid, it gracefully falls back to the browser's native speech synthesis (with built-in safety timeouts to prevent Chrome hanging bugs).
+- **Advanced LLM Reasoning**: Google Gemini 2.5 Flash with search-grounded answers for real-time facts (prices, weather, news, dates, etc). Supports fallback to OpenAI, Groq, and Anthropic providers.
+- **Optional Logging**: Supabase integration for persisting conversation logs to a database.
+
+## 🚀 Quick Start
 
 ```bash
 npm install
 cp .env.example .env.local
-# Add GEMINI_API_KEY and SARVAM_API_KEY
-npm run dev
 ```
 
+### Environment Variables
+To get the most out of the application, populate the following keys in your `.env.local`:
+
+**Recommended for Best Experience:**
+- `GEMINI_API_KEY` — Google Gemini 2.5 Flash for intelligent reasoning and grounded search
+- `ELEVENLABS_API_KEY` — Premium, human-like voices for TTS (Recommended)
+- `SARVAM_API_KEY` — High-quality multilingual Speech-to-Text (saaras:v3 model)
+
+**Alternative LLM Providers (Optional):**
+- `OPENAI_API_KEY` — Alternative for both TTS and LLM
+- `ANTHROPIC_API_KEY` — Claude for LLM reasoning
+- `GROQ_API_KEY` — Fast inference alternative
+
+**Optional Features:**
+- `SUPABASE_URL` & `SUPABASE_ANON_KEY` — For persisting conversation logs to a database
+- `UPSTASH_REDIS_REST_URL` & `UPSTASH_REDIS_REST_TOKEN` — For distributed rate limiting
+- `VERCEL_POSTGRES_URL` — PostgreSQL integration (if using Vercel)
+
+**Note:** If TTS keys are missing, the app will fall back to your browser's built-in speech synthesis. If STT fails, it will use the browser's Web Speech API.
+
+### Run the App
+```bash
+npm run dev
+```
 Open [http://localhost:3000](http://localhost:3000) and click **Open Agent**.
 
-**Required:**
-- `GEMINI_API_KEY`
-- `SARVAM_API_KEY`
-
-**Optional:**
-- `SUPABASE_URL` + `SUPABASE_ANON_KEY` — transcript persistence
-
-## Project Structure
+## 📁 Project Structure
 
 ```
 app/
-  agent/               # Voice agent UI page
+  agent/                # Voice agent main UI page with real-time voice pipeline
+  about/                # About Us page
+  dashboard/            # Admin dashboard (optional)
+  knowledge-base/       # Knowledge base management
   api/
-    transcribe/        # Speech to text
-    generate/          # LLM response
-    tts/               # Text to speech
-    chat/              # Full pipeline
+    transcribe/         # Sarvam STT with Web Speech fallback
+    chat/               # Multi-provider LLM pipeline with grounded search
+    tts/                # ElevenLabs/OpenAI TTS with browser fallback
+    generate/           # Generative content endpoint
+    test-sarvam/        # Sarvam API testing utility
 components/
-  VoiceAgent.tsx       # Main voice runtime
+  VoiceAgent.tsx        # Core React component for voice capture, noise gating, TTS
+  OrbVisualizer.tsx     # Real-time audio waveform visualization
+  PwaRegister.tsx       # PWA registration for offline support
 lib/
-  ai-client.ts         # Provider orchestration
-  memory-manager.ts    # Session history
-  knowledge-base.ts    # FAQ lookup
-  supabase-server.ts   # Transcript storage
+  ai-client.ts          # Multi-provider LLM orchestration (Gemini, OpenAI, Anthropic, Groq)
+  vercel-ai-setup.ts    # Vercel AI SDK initialization
+  memory-manager.ts     # Stateful conversation memory (frontend-persisted)
+  knowledge-base.ts     # Static FAQ / knowledge lookup
+  supabase-server.ts    # Server-side Supabase client
+public/
+  sw.js                 # Service Worker for PWA offline functionality
 ```
 
-## API Endpoints
+## 🧪 Testing & Development
 
-- `POST /api/transcribe` - Audio to text
-- `POST /api/generate` - LLM response
-- `POST /api/tts` - Text to audio
-- `POST /api/chat` - Full pipeline with memory
+- **Test Gemini API**: Run `node test_gemini.mjs` to verify Gemini API connectivity and key validity.
+- **Sarvam STT Testing**: Use the `/api/test-sarvam` endpoint to test transcription.
 
-## Deploy to Vercel
+## 🛠 Troubleshooting
 
-```bash
-git push origin main
-```
-
-Import repository into [Vercel](https://vercel.com/new), add env variables from `.env.example`, deploy. Uses edge runtime for low-latency API routes.
-
-## Troubleshooting
-
-**Microphone access denied** — Check browser settings: Settings → Privacy → Microphone. HTTPS required in production.
-
-**No transcription** — Verify `SARVAM_API_KEY`. Check noise gate threshold in settings.
-
-**No LLM response** — Verify `GEMINI_API_KEY`.
-
-**Build errors** — Clear `node_modules` and `package-lock.json`, run `npm install` again.
-
+- **Microphone Access Denied**: Check your browser settings (Settings → Privacy → Microphone). Ensure you are running on `localhost` or `HTTPS` in production.
+- **Transcription Failed (503)**: `SARVAM_API_KEY` is missing. Add it to `.env.local` or configure in Vercel deployment.
+- **Transcription Failed (502)**: Sarvam API upstream error. Check audio format and API subscription limits.
+- **Agent gets stuck "Speaking..."**: This indicates the browser's native TTS hung. A safety timeout is built in, but for best results, provide a valid `ELEVENLABS_API_KEY` or `OPENAI_API_KEY` in `.env.local`.
+- **Agent cuts itself off during speech**: The noise gate threshold might be too low. Adjust the "Noise sensitivity" slider in the agent settings. Try values between 0.03–0.10.
+- **LLM not responding (Gemini)**: Verify `GEMINI_API_KEY` is correct in `.env.local`. Test with `node test_gemini.mjs`.
+- **Port already in use**: If `npm run dev` fails due to port 3000, it will automatically try port 3001. Check your terminal output for the correct URL.
+- **Logging to Supabase fails silently**: If `SUPABASE_URL` and `SUPABASE_ANON_KEY` are invalid, logs are skipped gracefully. Verify credentials in `.env.local`.

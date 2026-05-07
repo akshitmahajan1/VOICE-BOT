@@ -19,7 +19,7 @@ export default function RootLayout({
     <html lang="en" suppressHydrationWarning>
       <body className="antialiased">
         <PwaRegister />
-        <header className="sticky top-0 z-50 border-b border-slate-700/70 bg-slate-950/70 backdrop-blur">
+        <header className="sticky top-0 z-50 border-b border-white/10 bg-white/5 backdrop-blur-xl shadow-lg">
           <nav className="mx-auto flex w-full max-w-6xl items-center justify-between px-4 py-3 md:px-8">
             <Link href="/" className="text-sm font-semibold tracking-wide text-slate-100 hover:text-white">
               Voice Agent

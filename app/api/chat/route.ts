@@ -14,12 +14,18 @@ const payloadSchema = z.object({
   provider: z.enum(["openai", "groq", "anthropic"]).default("openai"),
   model: z.string().optional(),
   enableLogging: z.boolean().default(true),
+  history: z.array(z.object({
+    role: z.enum(["user", "assistant"]),
+    content: z.string(),
+    language: z.string(),
+    timestamp: z.string()
+  })).optional()
 });
 
 export async function POST(req: NextRequest) {
   try {
     const parsed = payloadSchema.parse(await req.json());
-    const history = getSessionHistory(parsed.sessionId);
+    const history = parsed.history ?? getSessionHistory(parsed.sessionId);
 
     const response = await generateAgentResponse({
       provider: parsed.provider as ProviderName,
