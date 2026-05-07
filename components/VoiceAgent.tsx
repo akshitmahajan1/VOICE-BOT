@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { OrbVisualizer } from "./OrbVisualizer";
+import { OrbVisualizer, type AgentState } from "./OrbVisualizer";
 
 type AudioGraph = {
   ctx: AudioContext;
@@ -343,12 +343,13 @@ export function VoiceAgent() {
   const [settings, setSettings] = useState<AgentSettings>(defaultSettings);
   const [items, setItems] = useState<TranscriptEntry[]>([]);
   const [liveTranscript, setLiveTranscript] = useState<string>("");
-  const [isListening, setIsListening] = useState(false);
-  const [isSpeaking, setIsSpeaking] = useState(false);
+  const [isRecording, setIsRecording] = useState(false);
+  const [agentState, setAgentState] = useState<AgentState>("IDLE");
   const [level, setLevel] = useState(0);
   const [error, setError] = useState<string | null>(null);
 
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const audioChunks = useRef<Blob[]>([]);
   const recognitionRef = useRef<BrowserSpeechRecognition | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const graphRef = useRef<AudioGraph | null>(null);
@@ -365,6 +366,16 @@ export function VoiceAgent() {
   const bargeInHitsRef = useRef(0);
 
   const sessionId = useMemo(() => crypto.randomUUID(), []);
+
+  const handleEndOfSpeech = () => {
+    setAgentState("IDLE");
+    isSpeakingRef.current = false;
+
+    // Resume audio context if suspended (echo cancellation)
+    if (graphRef.current?.ctx.state === "suspended") {
+      graphRef.current.ctx.resume().catch(() => undefined);
+    }
+  };
 
   useEffect(() => {
     return () => {
@@ -597,13 +608,14 @@ export function VoiceAgent() {
     recorder.start(5000);
   }
 
-  async function startListening() {
+  const startListening = async () => {
+    setIsRecording(true);
+    setAgentState("LISTENING_ACTIVE");
+    audioChunks.current = [];
+    setError(null);
+    setLiveTranscript("");
+
     try {
-      setError(null);
-      clearSpeechPauseTimer();
-      pendingSpeechTranscriptRef.current = "";
-      setLiveTranscript("");
-      recorderFallbackStartedRef.current = false;
       const stream = await navigator.mediaDevices.getUserMedia({
         audio: {
           noiseSuppression: true,
@@ -615,28 +627,108 @@ export function VoiceAgent() {
 
       streamRef.current = stream;
       graphRef.current = await createAudioProcessingGraph(stream);
-      startRecorderFallback(stream);
+
+      const mimeType = resolveRecorderMimeType();
+      const recorder = mimeType
+        ? new MediaRecorder(stream, { mimeType })
+        : new MediaRecorder(stream);
+      
+      mediaRecorderRef.current = recorder;
+
+      recorder.ondataavailable = (e) => {
+        if (e.data.size > 0) audioChunks.current.push(e.data);
+      };
+
+      recorder.start(100);
+
       intervalRef.current = window.setInterval(() => {
         if (!graphRef.current) return;
-
-        // STATE LOCK: When agent is speaking, ignore microphone completely
         if (isSpeakingRef.current) {
           setLevel(0);
           return;
         }
-
         const next = getRmsLevel(graphRef.current.analyser);
         levelRef.current = next;
         setLevel(next);
       }, 120);
-      setIsListening(true);
-    } catch {
+
+    } catch (err) {
+      console.error("Mic access denied", err);
+      setIsRecording(false);
+      setAgentState("IDLE");
       setError("Microphone access failed. Check browser permissions.");
     }
-  }
+  };
+
+  const stopAndSend = () => {
+    if (!mediaRecorderRef.current) return;
+
+    setIsRecording(false);
+    setAgentState("THINKING");
+    mediaRecorderRef.current.stop();
+
+    mediaRecorderRef.current.onstop = async () => {
+      console.log("Recorder stopped, chunks count:", audioChunks.current.length);
+      const audioBlob = new Blob(audioChunks.current, { type: mediaRecorderRef.current?.mimeType || 'audio/webm' });
+      console.log("Captured audio blob size:", audioBlob.size, "MIME:", audioBlob.type);
+
+      if (audioBlob.size === 0) {
+        setAgentState("IDLE");
+        setError("No audio captured. Please speak louder or check your mic.");
+        return;
+      }
+      
+      try {
+        console.log("Converting to WAV...");
+        const wavBlob = await convertBlobToWav(audioBlob);
+        console.log("WAV blob size:", wavBlob.size);
+
+        const body = new FormData();
+        body.append("audio", wavBlob, "recording.wav");
+        body.append("language", settings.language);
+        body.append("sessionId", sessionId);
+
+        console.log("Sending to /api/transcribe...");
+        const sttRes = await fetch("/api/transcribe", {
+          method: "POST",
+          body,
+        });
+
+        if (!sttRes.ok) {
+          const errText = await sttRes.text();
+          console.error("Transcription API failed:", sttRes.status, errText);
+          throw new Error(`Transcription failed: ${sttRes.status}`);
+        }
+        
+        const sttJson = await sttRes.json();
+        console.log("STT Result:", sttJson);
+
+        if (sttJson.text) {
+          await processTranscript(sttJson.text, sttJson.language, sttJson.confidence);
+        } else {
+          console.warn("STT returned empty text");
+          setAgentState("IDLE");
+        }
+      } catch (err) {
+        console.error("Processing failed:", err);
+        setAgentState("IDLE");
+        setError(`Speech processing failed: ${err instanceof Error ? err.message : String(err)}`);
+      } finally {
+        stopListening();
+      }
+    };
+  };
+
+  const handleButtonClick = () => {
+    if (!isRecording) {
+      startListening();
+    } else {
+      stopAndSend();
+    }
+  };
 
   async function stopListening() {
-    setIsListening(false);
+    setIsRecording(false);
     clearSpeechPauseTimer();
     pendingSpeechTranscriptRef.current = "";
     recorderFallbackStartedRef.current = false;
@@ -658,7 +750,7 @@ export function VoiceAgent() {
   }
 
   async function speak(text: string, language: string) {
-    setIsSpeaking(true);
+    setAgentState("SPEAKING");
     isSpeakingRef.current = true;
     clearSpeechPauseTimer();
     recognitionRef.current?.stop();
@@ -698,39 +790,41 @@ export function VoiceAgent() {
               resolveAssistantSpeech();
             }
           };
-          fallback.onend = safeResolve;
-          fallback.onerror = safeResolve;
+
+          // Browser Fallback TTS: Hook into onend event
+          fallback.onstart = () => {
+            setAgentState("SPEAKING");
+            isSpeakingRef.current = true;
+          };
+          fallback.onend = () => {
+            safeResolve();
+            handleEndOfSpeech(); // Reset to LISTENING state
+          };
+          fallback.onerror = () => {
+            safeResolve();
+            handleEndOfSpeech(); // Reset to LISTENING state
+          };
           speechSynthesis.speak(fallback);
           
           // Safety timeout in case onend never fires (give it plenty of time so it doesn't cut off)
           const words = text.split(/\s+/).length;
           const timeoutMs = Math.max(10000, (words / 1.5) * 1000 + 5000);
-          setTimeout(safeResolve, timeoutMs);
+          setTimeout(() => {
+            safeResolve();
+            handleEndOfSpeech();
+          }, timeoutMs);
         };
 
-        audio.onended = () => resolveAssistantSpeech();
+        // Premium TTS: Hook into onended event
+        audio.onended = () => {
+          resolveAssistantSpeech();
+          handleEndOfSpeech(); // Reset to LISTENING state
+        };
         audio.onerror = () => playFallback();
         audio.play().catch(() => playFallback());
       });
     } finally {
       resolveAssistantSpeech();
-      isSpeakingRef.current = false;
-      setIsSpeaking(false);
-      if (isListening) {
-        pendingSpeechTranscriptRef.current = "";
-        setLiveTranscript("");
-        try {
-          if (recognitionRef.current) {
-            recognitionRef.current.start();
-          }
-        } catch {
-          // Ignore if already started
-        }
-        if (mediaRecorderRef.current && mediaRecorderRef.current.state === "recording") {
-          mediaRecorderRef.current.stop();
-          mediaRecorderRef.current.start(5000);
-        }
-      }
     }
   }
 
@@ -748,28 +842,25 @@ export function VoiceAgent() {
 
           <button
             type="button"
-            onClick={() => (isListening ? stopListening() : startListening())}
-            className="rounded-xl bg-emerald-500 px-4 py-2 font-semibold text-white transition hover:bg-emerald-400"
+            onClick={handleButtonClick}
+            disabled={agentState === 'SPEAKING' || agentState === 'THINKING'}
+            className={`px-10 py-5 rounded-2xl font-bold text-white transition-all duration-300 ${
+              isRecording 
+                ? 'bg-red-600 animate-pulse scale-105 shadow-[0_0_20px_rgba(220,38,38,0.5)]' 
+                : 'bg-blue-600 hover:bg-blue-500 shadow-xl'
+            } disabled:opacity-30 disabled:grayscale`}
           >
-            {isListening ? "Stop" : "Start"} Listening
+            {agentState === 'SPEAKING' ? 'AGENT RESPONDING...' : 
+             agentState === 'THINKING' ? 'PROCESSING...' :
+             isRecording ? 'CLICK TO SEND' : 'CLICK TO START LISTENING'}
           </button>
         </header>
 
-        <div className="mb-4 grid gap-4 md:grid-cols-2">
-          <NoiseGate level={level} threshold={settings.noiseThreshold} />
-          <div className="rounded-xl border border-white/10 bg-white/5 p-4 backdrop-blur-xl shadow-[0_8px_32px_0_rgba(0,0,0,0.15)]">
-            <div className="text-sm text-slate-400">Agent state</div>
-            <div className="mt-2 text-lg font-medium">
-              {isSpeaking ? "Speaking" : (isListening && level > settings.noiseThreshold) ? "Listening" : "Idle"}
-            </div>
-          </div>
+        <div className="flex flex-col items-center gap-8 mb-8">
+          <OrbVisualizer state={agentState} />
+          {isRecording && <p className="text-sm text-blue-400 animate-bounce">Recording your input...</p>}
         </div>
 
-        {isListening && streamRef.current ? (
-          <div className="mb-6 flex justify-center">
-            <OrbVisualizer stream={streamRef.current} isSpeaking={isSpeaking} />
-          </div>
-        ) : null}
 
         {error ? (
           <p className="mb-3 rounded-lg border border-rose-500/40 bg-rose-900/30 p-3 text-sm text-rose-200">

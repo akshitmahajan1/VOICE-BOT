@@ -22,10 +22,10 @@ export default function AboutPage() {
             Email us directly and we will get back to you as soon as possible.
           </p>
           <a
-            href="mailto:your-email@example.com"
+            href="mailto:akshit.mahajan013@gmail.com"
             className="mt-4 inline-flex rounded-lg border border-white/20 bg-white/10 px-4 py-2 text-sm font-semibold text-white backdrop-blur-md transition-all hover:bg-white/20 hover:scale-105"
           >
-            your-email@example.com
+            akshit.mahajan013@gmail.com
           </a>
         </div>
       </section>

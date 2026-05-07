@@ -27,14 +27,17 @@ This project demonstrates:
 ## 🔄 How the Voice Pipeline Works
 
 1. **User speaks** → Web Audio API captures audio chunks
-2. **Noise gate analyzes** → If sound level exceeds threshold, recording starts
+2. **Noise gate analyzes** → If sound level exceeds threshold (only when LISTENING state), recording starts
 3. **Speech-to-Text** → Sends chunk to Sarvam AI (fallback: browser Web Speech API)
 4. **Memory lookup** → Appends transcript to frontend-persisted conversation history
 5. **LLM reasoning** → Sends to Gemini (with grounded search) or fallback provider
 6. **Audio sanitization** → Cleans response (removes citations, markdown, etc.)
-7. **Text-to-Speech** → Streams via ElevenLabs or OpenAI (fallback: browser speech synthesis)
-8. **Orb animates** → Visualizer responds to audio playback in real-time
-9. **Log created** → Optionally persists to Supabase for analytics
+7. **Agent state changes to SPEAKING** → Orb turns Purple, noise gate is completely disabled
+8. **Text-to-Speech** → Streams via ElevenLabs or OpenAI (fallback: browser speech synthesis)
+9. **TTS provider triggers `onend` event** → `handleEndOfSpeech()` callback fires
+10. **Agent state resets to LISTENING** → Orb turns Blue, noise gate re-engages after 200ms delay
+11. **Audio context resumes** → Prevents microphone from catching speaker "pop"
+12. **Log created** → Optionally persists to Supabase for analytics
 
 ## 🚀 Quick Start
 
@@ -88,8 +91,33 @@ Instead of locking into one LLM provider:
 
 ### Audio Intelligence
 - **Noise Gate**: Prevents the agent from listening to its own voice (state-lock mechanism)
+  - Only active when agent is in LISTENING state
+  - Completely disabled during SPEAKING state to prevent self-interference
 - **Audio Sanitization**: Strips citations, markdown, and non-speech content before TTS
-- **Real-time Visualization**: Orb Visualizer responds to live audio, creating engagement
+- **Real-time Visualization**: Orb Visualizer responds to live audio with state-based colors:
+  - 🔵 Blue glow in LISTENING state
+  - 🟣 Purple glow in SPEAKING state
+
+## 🎙️ Voice State Management
+
+The agent operates in two primary states, synchronized with the Orb Visualizer for real-time user feedback:
+
+| State | Orb Color | Behavior | Noise Gate | Audio Processing |
+|-------|-----------|----------|-----------|------------------|
+| **LISTENING** | 🔵 Blue | Actively monitoring microphone input | Active | Processes user voice |
+| **SPEAKING** | 🟣 Purple | Playing LLM response via TTS | Disabled | Ignores microphone completely |
+
+**State Machine Flow:**
+1. **LISTENING → SPEAKING**: When LLM response is ready, TTS playback starts, Orb turns purple, noise gate disables
+2. **SPEAKING → LISTENING**: When TTS `onend` event fires, `handleEndOfSpeech()` callback resets state to LISTENING
+3. **200ms Delay**: Prevents microphone from registering the "pop" sound at the end of speaker output
+4. **Audio Context Resume**: Ensures echo cancellation remains active between agent responses
+
+**Visual Feedback:**
+- Orb intensity increases in SPEAKING state (scale 110%, stronger glow)
+- Orb shows blue gradient in LISTENING state
+- Orb shows purple gradient in SPEAKING state
+- Real-time waveform animation responds to audio levels
 
 ## 📁 Project Structure
 

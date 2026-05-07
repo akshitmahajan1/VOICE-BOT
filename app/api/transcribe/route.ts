@@ -33,8 +33,9 @@ export async function POST(req: NextRequest) {
     // Log audio info for debugging
     console.log("Audio type:", (audio as Blob).type, "Size:", (audio as Blob).size, "bytes");
 
+    const extension = (audio as Blob).type.includes("wav") ? "wav" : "webm";
     const sarvamBody = new FormData();
-    sarvamBody.append("file", audio, "speech.webm");
+    sarvamBody.append("file", audio, `speech.${extension}`);
     sarvamBody.append("model", process.env.SARVAM_STT_MODEL || "saaras:v3");
     sarvamBody.append("mode", "transcribe");
     if (language !== "auto") {
