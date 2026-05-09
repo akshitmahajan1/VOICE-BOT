@@ -632,7 +632,7 @@ export function VoiceAgent() {
       const recorder = mimeType
         ? new MediaRecorder(stream, { mimeType })
         : new MediaRecorder(stream);
-      
+
       mediaRecorderRef.current = recorder;
 
       recorder.ondataavailable = (e) => {
@@ -677,7 +677,7 @@ export function VoiceAgent() {
         setError("No audio captured. Please speak louder or check your mic.");
         return;
       }
-      
+
       try {
         console.log("Converting to WAV...");
         const wavBlob = await convertBlobToWav(audioBlob);
@@ -699,7 +699,7 @@ export function VoiceAgent() {
           console.error("Transcription API failed:", sttRes.status, errText);
           throw new Error(`Transcription failed: ${sttRes.status}`);
         }
-        
+
         const sttJson = await sttRes.json();
         console.log("STT Result:", sttJson);
 
@@ -757,7 +757,7 @@ export function VoiceAgent() {
     try {
       const url = `/api/tts?text=${encodeURIComponent(text)}&language=${encodeURIComponent(language)}&voiceId=${encodeURIComponent(settings.voiceId)}`;
       const audio = new Audio(url);
-      
+
       await new Promise<void>((resolve) => {
         activeAudioRef.current = audio;
         activeAudioUrlRef.current = url;
@@ -805,7 +805,7 @@ export function VoiceAgent() {
             handleEndOfSpeech(); // Reset to LISTENING state
           };
           speechSynthesis.speak(fallback);
-          
+
           // Safety timeout in case onend never fires (give it plenty of time so it doesn't cut off)
           const words = text.split(/\s+/).length;
           const timeoutMs = Math.max(10000, (words / 1.5) * 1000 + 5000);
@@ -844,15 +844,14 @@ export function VoiceAgent() {
             type="button"
             onClick={handleButtonClick}
             disabled={agentState === 'SPEAKING' || agentState === 'THINKING'}
-            className={`px-10 py-5 rounded-2xl font-bold text-white transition-all duration-300 ${
-              isRecording 
-                ? 'bg-red-600 animate-pulse scale-105 shadow-[0_0_20px_rgba(220,38,38,0.5)]' 
+            className={`px-10 py-5 rounded-2xl font-bold text-white transition-all duration-300 ${isRecording
+                ? 'bg-red-600 animate-pulse scale-105 shadow-[0_0_20px_rgba(220,38,38,0.5)]'
                 : 'bg-blue-600 hover:bg-blue-500 shadow-xl'
-            } disabled:opacity-30 disabled:grayscale`}
+              } disabled:opacity-30 disabled:grayscale`}
           >
-            {agentState === 'SPEAKING' ? 'AGENT RESPONDING...' : 
-             agentState === 'THINKING' ? 'PROCESSING...' :
-             isRecording ? 'CLICK TO SEND' : 'CLICK TO START LISTENING'}
+            {agentState === 'SPEAKING' ? 'AGENT RESPONDING...' :
+              agentState === 'THINKING' ? 'PROCESSING...' :
+                isRecording ? 'CLICK TO SEND' : 'CLICK TO START LISTENING'}
           </button>
         </header>
 
